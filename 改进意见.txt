@@ -1,0 +1,278 @@
+
+1.针对实验的改进
+(1)还原old_pies
+我之前对old_pies做了过多的修改，导致实验时old_pies和new_pies的区别仅在于drop node时是否采用中心度原则，现在可以从以下几点还原old_pies到文中的状态重新实验：1）把old_pies的drop node策略从修改后的“random select”变为文中的“选取到达最早度数最低的点” 2）额外孤立点的处理需要去掉
+(2)实验规模过小
+目前实验仅使用了10个snapshot，可能发生的迁移较少，我们可以多取些snapshot再看实验效果。
+(3）建议用曲线图来表现precision和recall随着时间的变化趋势
+由于我们主要修改的是drop node的部分，故而我们想要看到的效果应该是：随着t的增加（snapshot序号的增加），new_pies的precision和recall逐渐比起old_pies更占优势，所以我建议把sample_rate一定的情况下，不同的snapshot的precision和recall绘成曲线图，来看结果
+
+2.算法的进一步改进
+(1)借鉴static sample一些文章以及那篇stream聚类，我们可以得到以下两个假设：
+a.为了维持sample中community structure,我们应当尽可能使sample到的点属于不同的聚类
+b.stream graph中，如果某一刻新到达的edge与已经到达的edge没有join的关系，我们可以视为在此时刻其属于一个单独的聚类
+
+基于以上两点，我建议将S达到sample size后，新edge到达时的概率替换改为：
+1.if edge中的两个端点均未被采样,即edge相对于sample而言孤立，then 我们直接用edge替换进sample
+2.else 按照原有的规则进行概率替换
+
+现在我们修改为：如果新到达的edge不与sample集孤立，就直接替换进sample集，而不是进行概率替换
+
+
+4)流程
+整个流程现在应该是这样：
+A. 度分布均匀的benchmark 生成过程：(dynbench_new)
+1.bm.py生成original snapshot (another benchmark graph: newbenchmark)
+nohup python ./bm.py StdMerge ./../test/output-prefix --n=200 --q=20 --p_in=.5 --p_out=.1 --t=10 --graph-format=tedgelist --comm-format=tcommlist &
+
+nohup python ./bm.py StdMerge ./../test/output-prefix --n=31 --q=16 --p_in=.5 --p_out=.1 --t=10 --graph-format=edgelist --comm-format=bynode &
+
+nohup python ./bm.py StdMerge ./../original_snapshot_20w/output-prefix --n=200 --q=20 --p_in=.5 --p_out=.05 --t=10 --graph-format=edgelist --comm-format=bynode &
+
+B. 度分布幂率分布的benchmark 生成过程(gen_dynamic_20151102)：
+1. benchmark 生成程序
+########our benchmark graph of my streaming clustering paper.##################
+#./bench_expand -N 1000 -muw 0.2 -k 9 -maxk 15 -s 5 -minc 40 -maxc 60 -expand 2 -contract 2 -r 0.25
+#./bench_mergesplit -N 1000 -muw 0.2 -k 9 -maxk 15 -s 5 -minc 40 -maxc 60 -merge 2 -split 2
+#./bench_birthdeath -N 1000 -muw 0.2 -k 9 -maxk 15 -s 5 -minc 40 -maxc 60 -birth 2 -death 2
+#./bench_switch -N 1000 -muw 0.2 -k 9 -maxk 15 -s 5 -minc 40 -maxc 60 -p 0.1
+#./bench_hide -N 1000 -muw 0.2 -k 9 -maxk 15 -s 5 -minc 40 -maxc 60 -hide 2
+########new benchmark graph.###################
+#./bench_expand -N 128 -muw 0.45 -k 16 -maxk 31 -s 5 -minc 32 -maxc 32 -expand 2 -contract 2 -r 0.25
+#./bench_mergesplit -N 128 -muw 0.45 -k 16 -maxk 31 -s 5 -minc 32 -maxc 32 -merge 2 -split 2
+#./bench_birthdeath -N 128 -muw 0.45 -k 16 -maxk 31 -s 5 -minc 32 -maxc 32 -birth 2 -death 2
+#./bench_switch -N 128 -muw 0.45 -k 16 -maxk 31 -s 5 -minc 32 -maxc 32 -p 0.1
+#./bench_hide -N 128 -muw 0.45 -k 16 -maxk 31 -s 5 -minc 32 -maxc 32 -hide 0.3
+
+2. 加预处理snapshot归零处理
+step 1：uniform_graph_syn.py and uniform_graph_realgraph.py 
+order_uniform_syn_and_real_graph.sh
+注意： 每次生成之后，就要copy 出来并归一化(uniform_graph_syn程序里面对每个snapshot进行rewriteEdgelistFromZero确保是全局最小点)，否则新生成的数据就会覆盖前面的数据。
+
+step 2: snapshot_collect根据original snapshot生成stream file
+python snap_collection_efficient.py
+or python snap_collection_output.py
+
+C. 真实数据生成过程
+C1: old four dataset
+step 1：uniform_graph_realgraph.py 
+order_uniform_syn_and_real_graph.sh
+
+step 2: snapshot_collect根据original snapshot生成stream file
+python snap_collection_efficient.py
+or python snap_collection_output.py
+command：order_syn_collection.sh
+
+
+C2: new dynamic dataset and old original dataset
+datasets/new_TEMPORAL_NETWORK  
+snap_split.py 并移动到目标文件夹中：
+&snap_split_stat.py 统计diameter，radius, etc.
+
+1.pies基于stream file生成同样数量的sample文件
+g++ pies_old.cpp -o pies_old
+g++ pies_new.cpp -o pies_new
+g++ pies_isolated_first.cpp -o pies_isolated_first
+g++ streamNS.cpp -o streamNS
+g++ streamES.cpp -o streamES
+g++ pies_random.cpp -o pies_random
+g++ pies_min.cpp -o pies_min
+
+./pies_old .....
+./pies_new ....
+command: new_command_of_jianpeng_no_repeat.sh（所有数据集）
+用于小数据集多次试验，但是大数据集得用no_repeat版本：新改动： 加入了重复多次实现：new_command_of_jianpeng.sh
+
+注意： old和new区别在于dropnode，
+random好像是实验不理想于是您让我把孤立点处理去掉，
+所有random应该是均匀采样，没有instack处理的版本
+
+2.sample_evaluation_add_partition_entire_clustering_realgraph.py 对sample进行评估
+./order_sample_evaluation_add_partition_entire_clustering_数据集_no_repeat
+新改动： 加入了重复多次实现：
+./order_sample_evaluation_add_partition_entire_clustering_数据集
+
+Optional:
+3.partition_complete_jianpeng.py 根据sample生成全体的相应的.tcomms
+
+4.cmtycmp.py对.tcomms进行评估 （对节点数目不变的人工数据集可以，但是对节点数目变化的真实数据集就不太可行。）
+python cmtycmp.py ./../powlaw_degree_small_snapshot_graph_for_streaming_sampling/new_mergesplit_u_45/snapshot_entire.tcomms ./../powlaw_degree_benchmark_results/new_pies_mergesplit_result/0.500000/snapshot_entire.tcomms
+
+
+数据集命名格式：
+enron: old_snapshot of yulong
+enronY: my dataset with original source and destination. (only for sample evaluation)
+enronYY: my sorted and normalized dataset（remove self-loop） for the population. (for sample evaluation and population inference)
+
+/home/jzhang4/graph_sampling/Jianpeng/interface_email_eu_core
+/home/jzhang4/graph_sampling/Jianpeng/interface_ColleageMsg
+/home/jzhang4/graph_sampling/Jianpeng/interface_realityY
+/home/jzhang4/graph_sampling/Jianpeng/interface_slashdotY
+/home/jzhang4/graph_sampling/Jianpeng/interface_facebookY
+/home/jzhang4/graph_sampling/Jianpeng/interface_SMS_A
+
+
+/home/jzhang4/graph_sampling/Jianpeng/powlaw_degree_small_snapshot_graph_for_streaming_sampling
+
+/bigclam test
+./bigclam2 -i:powlaw_degree_benchmark_results/new_pies_mergesplit_result/0.500000/snapshot_t0_test.graph -c:4 -o:powlaw_degree_benchmark_results/new_pies_mergesplit_result/0.500000/snapshot_t0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+3.
+不过这也只是一个想法，如果要做得改不少东西，那一套全部得移进PIES
+Alcibiades 10:00:40
+我其实是觉得stream cluster里那个聚类思路太粗糙了，但是用来指导sample的话可能够用
+另外我想了一下：如果修改pies，允许将聚类个数作为输入参数，然后套用那篇stream聚类的架构进行边的选取，是不是应该也能有所帮助？
+我们通过stream聚类中的方法为S维持一个粗略的聚类划分
+Alcibiades 9:40:24
+然后我们等到S取够sample size 了
+Alcibiades 9:40:42
+如果这时候聚类比输入的少
+Alcibiades 9:40:55
+而加入的边有助于增加聚类数量
+Alcibiades 9:41:15
+那么我们就添加进来
+Johnny_硅谷企业家 9:42:07
+但是聚类数目一直是恒定的么
+Alcibiades 9:42:20
+如果已经达到了聚类数量，那么我们就只添加能够维持聚类数量的edge，而对减少聚类数量的进行概率添加
+Johnny_硅谷企业家 9:42:34
+聚类数目理论上应该是随着流变化的
+Alcibiades 9:43:05
+嗯，所以同时也使用概率添加
+Alcibiades 9:44:02
+仅仅是作为指导，而不是依赖
+我们通过stream聚类中的方法为S维持一个粗略的聚类划分
+Alcibiades 9:40:24
+然后我们等到S取够sample size 了
+Alcibiades 9:40:42
+如果这时候聚类比输入的少
+Alcibiades 9:40:55
+而加入的边有助于增加聚类数量
+Alcibiades 9:41:15
+那么我们就添加进来
+Johnny_硅谷企业家 9:42:07
+但是聚类数目一直是恒定的么
+Alcibiades 9:42:20
+如果已经达到了聚类数量，那么我们就只添加能够维持聚类数量的edge，而对减少聚类数量的进行概率添加
+Johnny_硅谷企业家 9:42:34
+聚类数目理论上应该是随着流变化的
+Alcibiades 9:43:05
+嗯，所以同时也使用概率添加
+Alcibiades 9:44:02
+仅仅是作为指导，而不是依赖
+Alcibiades 9:45:09
+所以聚类数量还是会动态变化
+Alcibiades 9:49:00
+如果您说的是整个stream过程中随着边的到达聚类数量会发生变化，那么我们可以改成输入最大聚类个数，或者输入某个时刻的聚类个数
+Alcibiades 9:49:05
+这样用来指导
+Johnny_硅谷企业家 9:54:12
+如果已经达到了聚类数量，那么我们就只添加能够维持聚类数量的edge，而对减少聚类数量的进行概率添加
+Johnny_硅谷企业家 9:54:12
+这种情况也是聚类数目变小
+Johnny_硅谷企业家 9:54:12
+如果聚类出现合并
+Alcibiades 9:54:28
+是的
+Alcibiades 9:54:50
+输入聚类个数肯定是只能用作指导
+Alcibiades 9:55:40
+所以允许聚类发生动态变化
+Alcibiades 9:56:17
+而不是到达了就停止
+Johnny_硅谷企业家 9:58:29
+恩，概率添加的话，删除操作呢
+Johnny_硅谷企业家 9:58:39
+全部执行
+Johnny_硅谷企业家 9:58:41
+？
+Alcibiades 9:58:51
+删除还是全部执行吧
+Alcibiades 9:59:07
+因为聚类个数n也只是一个指导作用
+Alcibiades 9:59:37
+不过这也只是一个想法，如果要做得改不少东西，那一套全部得移进PIES
+Alcibiades 10:00:40
+我其实是觉得stream cluster里那个聚类思路太粗糙了，但是用来指导sample的话可能够用
+
+
+
+
+
+
+Hi Jianpeng,
+
+Thank you very much for your interest in our paper.
+
+On Wed, May 3, 2017 at 12:31 PM Zhang, J. <j.zhang.4@tue.nl> wrote:
+Dear Lorenzo,
+ 
+Sorry to interrupt you. I am a second year PhD student in TU/e in the Netherlands, I have noticed that you had published the paper “TRIèST: Counting Local and Global Triangles in Fully-Dynamic Streams with Fixed Memory Size” at ACM KDD'16, and I am very inspired by you methods to sample on the streaming graph and count the triangles. 
+You have shown the various results in the real graphs, but I could not find these networks (i.e., Patent, LastFM, Yahoo! Answers, Twitter) 
+
+Please find the raw data here:
+
+Patent cit / co-auth.
+http://www.nber.org/patents/
+
+LastFm: 
+http://konect.uni-koblenz.de/networks/lastfm_band
+
+Twitter
+http://law.di.unimi.it/webdata/twitter-2010/
+This is a large dataset in compressed form. You need to run the extractor from the website to obtain it. 
+
+Yahoo!
+This dataset is available on request from Yahoo! Webscope. I cannot share it, as you need to ask permission to Yahoo! before using it. 
+
+Notice that the raw data need to be preprocessed to obtain the dataset used in our analysis. For consistency of analysis I can share with you the processed datasets for the publicly available patent and lastfm.  
+Lorenzo can you send it via mail?
+For the Yahoo! dataset I cannot share it per license agreement. The Twitter graph is not processed (the edges are just streamed in a random order). 
+
+Concerning the ground truth we obtain it by simply counting the triangles with an exact algorithm. An easy way to do so with our code available online, is to run a triangle counting algorithm with probability of sampling = 1 (e.g. run FixPSampler from  
+https://github.com/aepasto/triest/blob/master/GraphSampler.h
+with prob = 1 or run ReservoirSampling with a reserviour of size larger than the graph size). 
+
+I hope this answers your questions!
+Best
+and the corresponding ground-truth. I am wondering whether you can share your datasets with me?  And I want to use them to analyze the streaming graphs.
+ 
+It will help me a lot. Hope to hear from you!
+ 
+Best wishes!
+Jianpeng
+

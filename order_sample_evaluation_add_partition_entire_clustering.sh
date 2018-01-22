@@ -1,0 +1,5 @@
+python sample_evaluation_add_partition_entire_clustering.py -i ./powlaw_degree_small_snapshot_graph_for_streaming_sampling/new_mergesplit_u_45/ -o powlaw_degree_benchmark_results/  -percentages 0.5 -sa new_pies -ds mergesplit -ss 5
+python sample_evaluation_add_partition_entire_clustering.py -i ./powlaw_degree_small_snapshot_graph_for_streaming_sampling/new_mergesplit_u_45/ -o powlaw_degree_benchmark_results/   -percentages 0.5 -sa old_pies -ds mergesplit -ss 5
+python sample_evaluation_add_partition_entire_clustering.py -i ./powlaw_degree_small_snapshot_graph_for_streaming_sampling/new_mergesplit_u_45/ -o powlaw_degree_benchmark_results/   -percentages 0.5 -sa pies_isolated_first -ds mergesplit -ss 5
+python sample_evaluation_add_partition_entire_clustering.py -i ./powlaw_degree_small_snapshot_graph_for_streaming_sampling/new_mergesplit_u_45/ -o powlaw_degree_benchmark_results/   -percentages 0.5 -sa streamNS -ds mergesplit -ss 5
+python sample_evaluation_add_partition_entire_clustering.py -i ./powlaw_degree_small_snapshot_graph_for_streaming_sampling/new_mergesplit_u_45/ -o powlaw_degree_benchmark_results/   -percentages 0.5 -sa streamES -ds mergesplit -ss 5
